@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
-const { Configuration, OpenAIApi } = require("openai");
+const OpenAI = require("openai");
 const nodemailer = require("nodemailer");
 const bcrypt = require("bcrypt");
 const { Pool } = require("pg");
@@ -66,7 +66,7 @@ app.post("/jobs", authMiddleware, async (req, res) => {
   res.send("Job added");
 });
 
-// Get all jobs
+// Get all jobs with optional search
 app.get("/jobs", authMiddleware, async (req, res) => {
   const { search = "" } = req.query;
   const result = await pool.query(
@@ -84,20 +84,23 @@ app.delete("/jobs/:id", authMiddleware, async (req, res) => {
   res.send("Job deleted");
 });
 
-// OpenAI Resume Suggestion
-const openai = new OpenAIApi(new Configuration({ apiKey: process.env.OPENAI_API_KEY }));
+// ✅ Correct OpenAI usage
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
+// Resume improvement suggestion
 app.post("/suggest", authMiddleware, async (req, res) => {
   const { resume, job } = req.body;
 
-  const prompt = `Improve the following resume to suit this job description:\n\nResume:\n${resume}\n\nJob Description:\n${job}\n\nSuggestions:`;
+  const prompt = `Improve the following resume to better match the job description.\n\nResume:\n${resume}\n\nJob Description:\n${job}\n\nSuggestions:`;
 
-  const aiRes = await openai.createChatCompletion({
+  const aiRes = await openai.chat.completions.create({
     model: "gpt-4",
-    messages: [{ role: "user", content: prompt }],
+    messages: [{ role: "user", content: prompt }]
   });
 
-  const suggestion = aiRes.data.choices[0].message.content;
+  const suggestion = aiRes.choices[0]?.message?.content || "No suggestion generated.";
 
   await pool.query(
     "INSERT INTO ai_logs (email, resume, job_description, suggestion) VALUES ($1, $2, $3, $4)",
@@ -116,7 +119,7 @@ app.get("/ai/history", authMiddleware, async (req, res) => {
   res.json(result.rows);
 });
 
-// Email reminders (send when called manually)
+// Send email reminders manually
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -141,6 +144,7 @@ app.get("/reminders/send", async (req, res) => {
   res.send("Reminders sent");
 });
 
+// Start server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
